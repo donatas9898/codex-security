@@ -1262,15 +1262,24 @@ export async function main(
           "-c",
           'cli_auth_credentials_store="file"',
         ]);
-        if (args.action === "status") {
-          const authentication = scanAuthentication(dependencies.environment);
-          if (
-            authentication.method === "api_key" &&
-            (exitCode === 0 || exitCode === 1)
-          ) {
+        const authentication = scanAuthentication(dependencies.environment);
+        if (authentication.method === "api_key") {
+          if (args.action === "status" && (exitCode === 0 || exitCode === 1)) {
             exitCode = 0;
             errorOutput.write(
               `Effective scan authentication: API key from ${authentication.source}.\n`,
+            );
+            errorOutput.write(
+              "To use a ChatGPT sign-in, unset OPENAI_API_KEY and CODEX_API_KEY.\n",
+            );
+          } else if (
+            args.action === undefined &&
+            exitCode === 0 &&
+            !options.withApiKey &&
+            !options.withAccessToken
+          ) {
+            errorOutput.write(
+              `codex-security: warning: scans will use the API key from ${authentication.source} instead of your ChatGPT sign-in.\n`,
             );
             errorOutput.write(
               "To use a ChatGPT sign-in, unset OPENAI_API_KEY and CODEX_API_KEY.\n",
@@ -2272,7 +2281,10 @@ async function runScan(
     const message =
       failure instanceof OutputInsideProtectedRootError
         ? cliErrorMessage(protectedRootErrorMessage(failure))
-        : scanFailureMessage(failure);
+        : scanFailureMessage(
+            failure,
+            scanAuthentication(dependencies.environment),
+          );
     if (failure instanceof OutputInsideProtectedRootError) {
       errorOutput.write(`${message}\n`);
     } else {
@@ -2322,11 +2334,20 @@ async function runScan(
   return { exitCode: blockingCount > 0 ? 1 : 0, data: result.toJSON() };
 }
 
-function scanFailureMessage(error: unknown): string {
+function scanFailureMessage(
+  error: unknown,
+  authentication: ReturnType<typeof scanAuthentication>,
+): string {
   switch (classifyConnectionFailure(error)) {
     case "unauthorized":
+      if (authentication.method === "api_key") {
+        return `Authentication failed for the API key from ${authentication.source}. Check the configured key. To use a ChatGPT sign-in, unset OPENAI_API_KEY and CODEX_API_KEY, then retry.`;
+      }
       return "Authentication failed. Sign in again or provide a valid API key.";
     case "forbidden":
+      if (authentication.method === "api_key") {
+        return `The API key from ${authentication.source} cannot access the configured model. Check the key's model access. To use a ChatGPT sign-in, unset OPENAI_API_KEY and CODEX_API_KEY, then retry.`;
+      }
       return "The selected credentials cannot access the configured model. Use an account or API key with model access.";
     case "rate_limited":
       return "The configured account reached its rate limit. Wait and retry.";

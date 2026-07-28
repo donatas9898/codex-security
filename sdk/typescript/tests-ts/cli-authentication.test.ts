@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import { main } from "../src/cli.js";
+import { CodexSecurityError } from "../src/index.js";
 import {
   capture,
   dependencies,
@@ -68,6 +69,60 @@ describe("CLI authentication", () => {
       );
       expect(stderr.text()).not.toContain("SYNTHETIC_SECRET");
     }
+  });
+
+  test("warns after ChatGPT login when an environment key overrides it", async () => {
+    for (const [argv, environment, expectedSource] of [
+      [
+        ["login"],
+        { OPENAI_API_KEY: "sk-proj-SYNTHETIC_SECRET_123" },
+        "OPENAI_API_KEY",
+      ],
+      [
+        ["login", "--device-auth"],
+        { Codex_Api_Key: "sk-proj-SYNTHETIC_SECRET_456" },
+        "CODEX_API_KEY",
+      ],
+    ] as const) {
+      const stdout = capture();
+      const stderr = capture();
+
+      expect(
+        await main(
+          argv,
+          stdout.stream,
+          stderr.stream,
+          dependencies({ environment }),
+        ),
+      ).toBe(0);
+      expect(stdout.text()).toBe("");
+      expect(stderr.text()).toContain(
+        `warning: scans will use the API key from ${expectedSource} instead of your ChatGPT sign-in`,
+      );
+      expect(stderr.text()).toContain(
+        "To use a ChatGPT sign-in, unset OPENAI_API_KEY and CODEX_API_KEY.",
+      );
+      expect(stderr.text()).not.toContain("SYNTHETIC_SECRET");
+    }
+  });
+
+  test("does not hide or relabel a failed ChatGPT login", async () => {
+    const stdout = capture();
+    const stderr = capture();
+
+    expect(
+      await main(
+        ["login"],
+        stdout.stream,
+        stderr.stream,
+        dependencies({
+          environment: { OPENAI_API_KEY: "sk-proj-SYNTHETIC_SECRET_123" },
+          onCodex: () => 17,
+        }),
+      ),
+    ).toBe(17);
+    expect(stdout.text()).toBe("");
+    expect(stderr.text()).toBe("");
   });
 
   test("keeps stored-login status unchanged when no environment key is set", async () => {
@@ -234,6 +289,49 @@ describe("CLI authentication", () => {
         ? "unset OPENAI_API_KEY and CODEX_API_KEY, then retry the scan"
         : "env -u OPENAI_API_KEY -u CODEX_API_KEY codex-security scan ...",
     );
+  });
+
+  test("identifies overriding API keys in noninteractive scan auth failures", async () => {
+    for (const [environment, source] of [
+      [{ OPENAI_API_KEY: "sk-proj-SYNTHETIC_SECRET_123" }, "OPENAI_API_KEY"],
+      [{ CODEX_API_KEY: "sk-proj-SYNTHETIC_SECRET_456" }, "CODEX_API_KEY"],
+    ] as const) {
+      for (const [detail, expected] of [
+        ["401 invalid API key for org-private", "Authentication failed"],
+        [
+          "403 model access denied for org-private",
+          "cannot access the configured model",
+        ],
+      ] as const) {
+        const stdout = capture();
+        const stderr = capture();
+        const deps = dependencies({ environment });
+        deps.createSecurity = () => ({
+          run: async (_repository, options) => {
+            options?.onAuthentication?.({
+              method: "api_key",
+              source,
+              verified: false,
+            });
+            throw new CodexSecurityError(detail);
+          },
+          preflight: async () => fakePreflight(),
+          close: async () => {},
+        });
+
+        expect(await main(["scan"], stdout.stream, stderr.stream, deps)).toBe(
+          2,
+        );
+        expect(stdout.text()).toBe("");
+        expect(stderr.text()).toContain(expected);
+        expect(stderr.text()).toContain(`API key from ${source}`);
+        expect(stderr.text()).toContain(
+          "To use a ChatGPT sign-in, unset OPENAI_API_KEY and CODEX_API_KEY, then retry.",
+        );
+        expect(stderr.text()).not.toContain("SYNTHETIC_SECRET");
+        expect(stderr.text()).not.toContain("org-private");
+      }
+    }
   });
 
   test("reports stored and secondary-key scan authentication on stderr", async () => {
