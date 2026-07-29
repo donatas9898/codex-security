@@ -7,7 +7,7 @@ description: Use when Codex is already in the threat-modeling phase of a securit
 
 ## Objective
 
-Establish the repository-scoped threat model at the path defined in `../../references/scan-artifacts.md`. Reuse a cached model only when its final `Repository` and `Version` lines match the current target.
+Establish the repository-scoped threat model at the path defined in `../../references/scan-artifacts.md`. Reuse a cached model only when its final `Repository` and `Version` lines match the current target and its authoritative guidance still matches the current resolved security policy.
 
 `AGENTS.md` or resolved `SECURITY.md` guidance can be that authoritative source when it is sufficiently specific about the repository's product surfaces, trust boundaries, attacker-controlled inputs, assumptions, or security scan guidance to serve as the threat model.
 
@@ -29,8 +29,8 @@ Use the shared scan artifact path conventions in `../../references/scan-artifact
 ## Workflow
 
 1. Resolve `target_id`, the current version (revision for an immutable Git tree, snapshot digest otherwise), and the repository-scoped threat model path using `../../references/scan-artifacts.md`.
-2. If the repository-scoped threat model exists, reuse it only when its final `Repository` and `Version` lines match those current values. Otherwise regenerate it.
-3. Before inspecting repository source or generating a threat model, read `../../references/security-guidance.md` and the policy resolved for the scan target. Resolve it first if the coordinator did not supply it.
+2. Before inspecting repository source, reusing cached guidance, or generating a threat model, read `../../references/security-guidance.md` and the current policy resolved for the scan target. Resolve the policy first if the coordinator did not supply it.
+3. If the repository-scoped threat model exists, reuse it only when its final `Repository` and `Version` lines match the current target and, when authoritative security guidance is available, the cached threat-model body matches that guidance without alteration. Regenerate the repository-scoped threat model when the applicable policy or provided guidance has changed. Never modify a completed scan's sealed artifacts or historical threat model.
 4. If a threat model or authoritative security scan guidance is provided or referenced:
    - preserve it unchanged as the threat model body
    - treat that body as the only threat model source of truth
@@ -50,6 +50,8 @@ Generate and structure the threat model using `references/threat-model-guidance.
 ## Hard Rules
 
 - A provided threat model or authoritative security scan guidance is authoritative. Keep its body unchanged and append only the required cache footer.
+- Never reuse a cached threat model after its applicable `SECURITY.md` or provided authoritative guidance has changed, even if the target identity and Git revision are unchanged.
+- Preserve completed scan artifacts and their historical threat models. Apply updated policy to a new scan.
 - Threat model generation must stay at repository scope unless the user explicitly asks for narrower scope.
 - Do not turn this phase into findings about any current diff.
 - Do not let the current scan target, touched subsystem, or changed directories become the center of gravity for this phase unless the user explicitly asks for that narrower scope.

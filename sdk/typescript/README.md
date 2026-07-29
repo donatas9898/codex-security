@@ -339,6 +339,21 @@ Progress remains on stderr so JSON output stays machine readable. Network
 failures and rate limits remain retryable; definitive authentication and model
 authorization failures stop immediately.
 
+## Local security model
+
+Codex Security is a locally invoked CLI and SDK. The operator, selected
+repository, local Git installation, and explicitly configured tools run under
+the same trusted operating-system account. Normal Git operations and access to
+scan state shared by that account are not multi-user or sandbox-isolation
+boundaries.
+
+The product must still respect the selected target and output paths,
+configured Codex approvals and network controls, and the confidentiality of
+credentials, private source, and scan artifacts. A completed scan must
+accurately represent the documented scan mode, reviewed scope, and coverage.
+Consult the security policy for supported threat models, out-of-scope local
+behaviors, and private vulnerability reporting.
+
 ## Documentation and security
 
 - [CLI quickstart](https://developers.openai.com/codex/security/cli)
