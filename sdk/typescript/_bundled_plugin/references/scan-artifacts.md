@@ -29,13 +29,7 @@ Resolve `<python_command>` to the configured Python interpreter (`$PYTHON` when 
 - Repository-scoped threat model: `<security_scans_dir>/threat_model.md`
 - Per-scan threat model copy: `<context_dir>/threat_model.md`
 - Later scan phases should treat `<context_dir>/threat_model.md` as the source of truth.
-- Reuse a repository-scoped threat model only when its target identity,
-  version, and authoritative resolved security policy still match the current
-  scan. Regenerate it when the applicable policy changes.
-- Copy the selected repository-scoped threat model to
-  `<context_dir>/threat_model.md` without alteration for auditability.
-- Never rewrite the per-scan threat model or sealed artifacts of a completed
-  historical scan when a later scan adopts an updated security policy.
+- When a repository-scoped threat model already exists, copy it to `<context_dir>/threat_model.md` without alteration for auditability.
 
 End each repository-scoped threat model with these two lines:
 
