@@ -213,6 +213,7 @@ interface ScanArguments {
   maxCostUsd?: number;
   dryRun: boolean;
   parentScanId?: string;
+  resumeCheckpointDir?: string;
   expectedPluginVersion?: string;
 }
 
@@ -962,6 +963,10 @@ export async function main(
             .boolean()
             .default(false)
             .describe("Archive existing results; requires --output-dir."),
+          resume: z
+            .boolean()
+            .default(false)
+            .describe("Resume the latest interrupted scan at the current revision."),
           pluginPath: optionValue("--plugin-path")
             .optional()
             .describe(PLUGIN_PATH_DESCRIPTION),
@@ -1039,8 +1044,7 @@ export async function main(
           exitCode = 2;
           return;
         }
-        const outcome = await runScan(
-          {
+        let scanArguments: ScanArguments = {
             auth: options.auth,
             repository: args.repository,
             paths: options.path,
@@ -1060,7 +1064,83 @@ export async function main(
             failOnSeverity: options.failOnSeverity,
             maxCostUsd: options.maxCost,
             dryRun: options.dryRun,
-          },
+          };
+        if (options.resume) {
+          if (
+            options.path.length > 0 ||
+            options.knowledgeBase.length > 0 ||
+            options.diff !== undefined ||
+            options.workingTree ||
+            options.head !== undefined ||
+            options.base !== undefined ||
+            options.mode !== "standard" ||
+            options.model !== undefined ||
+            options.effort !== undefined ||
+            options.outputDir !== undefined ||
+            options.archiveExisting ||
+            options.pluginPath !== undefined ||
+            options.python !== undefined ||
+            options.codex.length > 0 ||
+            options.failOnSeverity !== undefined ||
+            options.maxCost !== undefined ||
+            options.dryRun
+          ) {
+            const message = "--resume uses the saved scan configuration and cannot be combined with scan options.";
+            errorOutput.write(`codex-security: ${message}\n`);
+            exitCode = 2;
+            return incurError({ code: "SCAN_RESUME_INVALID", message, exitCode });
+          }
+          try {
+            const history = await dependencies.runWorkbench([
+              "list-scans",
+              "--repository",
+              resolve(
+                dependencies.currentDirectory(),
+                args.repository ?? dependencies.currentDirectory(),
+              ),
+              "--status",
+              "failed",
+              "--limit",
+              "1",
+            ]);
+            const latest = Array.isArray(history["scans"])
+              ? history["scans"][0]
+              : undefined;
+            if (
+              latest === undefined ||
+              !isJsonObject(latest) ||
+              typeof latest["scanId"] !== "string"
+            ) {
+              throw new CodexSecurityError(
+                "No interrupted resumable scan was found for this repository.",
+              );
+            }
+            const resumed = await dependencies.runWorkbench([
+              "get-scan-recipe",
+              "--scan-id",
+              latest["scanId"],
+            ]);
+            scanArguments = scanArgumentsFromRecipe(
+              resumed["recipe"],
+              latest["scanId"],
+            );
+            scanArguments.auth = options.auth;
+            scanArguments.resumeCheckpointDir =
+              typeof latest["scanDir"] === "string"
+                ? latest["scanDir"]
+                : undefined;
+            if (scanArguments.resumeCheckpointDir === undefined) {
+              throw new CodexSecurityError("The resumable scan record is invalid.");
+            }
+          } catch (error) {
+            const message = cliErrorMessage(error);
+            errorOutput.write(`codex-security: ${message}\n`);
+            exitCode = 2;
+            return incurError({ code: "SCAN_RESUME_UNAVAILABLE", message, exitCode });
+          }
+        }
+        const outcome = await runScan(
+          scanArguments,
           errorOutput,
           dependencies,
           format !== "json" && format !== "jsonl",
@@ -2500,6 +2580,7 @@ async function runScan(
       mode: arguments_.mode,
       outputDir: arguments_.outputDir,
       archiveExisting: arguments_.archiveExisting,
+      resumeCheckpointDir: arguments_.resumeCheckpointDir,
       parentScanId: arguments_.parentScanId,
       expectedPluginVersion: arguments_.expectedPluginVersion,
       failureSeverity: arguments_.failOnSeverity,

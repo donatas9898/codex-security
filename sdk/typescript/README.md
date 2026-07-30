@@ -180,6 +180,7 @@ npx @openai/codex-security scan /path/to/repository --knowledge-base /path/to/th
 npx @openai/codex-security scan /path/to/repository --diff origin/main --json
 npx @openai/codex-security scan /path/to/repository --output-dir /path/outside/repository/results
 npx @openai/codex-security scan /path/to/repository --output-dir /path/outside/repository/results --archive-existing
+npx @openai/codex-security scan /path/to/repository --resume
 npx @openai/codex-security scan /path/to/repository --dry-run
 npx @openai/codex-security scan /path/to/repository --fail-on-severity high
 npx @openai/codex-security scan /path/to/repository --max-cost 5
@@ -231,6 +232,12 @@ If the output directory already contains results, add `--archive-existing`.
 The CLI moves them to `<output-dir>.previous-<timestamp>-<id>` and starts the
 scan in a new, empty directory at the original path. Add `--dry-run` to see
 the destination without moving files.
+
+If a scan is interrupted, rerun `scan --resume` from the same repository. It
+starts a child scan at the current revision, carries the prior artifact ledger
+forward as a checkpoint, and rechecks changed and new files before reusing any
+completed work. `--resume` uses the original scan configuration and cannot be
+combined with other scan options.
 
 Scans are report-only by default. Use `--fail-on-severity` in CI to exit 1 when
 a completed scan contains a finding at or above the selected severity.

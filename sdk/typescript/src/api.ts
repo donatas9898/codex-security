@@ -1,6 +1,6 @@
 /// <reference lib="esnext.disposable" preserve="true" />
 
-import { chmod, lstat, mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
@@ -125,6 +125,7 @@ export interface ScanOptions {
   knowledgeBasePaths?: string[];
   outputDir?: string;
   archiveExisting?: boolean;
+  resumeCheckpointDir?: string;
   parentScanId?: string;
   expectedPluginVersion?: string;
   failureSeverity?: SeverityLevel;
@@ -644,6 +645,27 @@ export class CodexSecurity {
       const targetRevision =
         registeredRevision === "unversioned" ? null : registeredRevision;
       activeScan = { id: scanId, options: workbenchOptions };
+      if (options.resumeCheckpointDir !== undefined) {
+        const checkpointDir = join(
+          scanDir,
+          "artifacts",
+          "00_resume_checkpoint",
+        );
+        const previousArtifacts = join(options.resumeCheckpointDir, "artifacts");
+        const hasPreviousArtifacts = await lstat(previousArtifacts)
+          .then((entry) => entry.isDirectory())
+          .catch(() => false);
+        if (hasPreviousArtifacts) {
+          await cp(previousArtifacts, checkpointDir, {
+            recursive: true,
+            force: false,
+            errorOnExist: true,
+            filter: (source) => basename(source) !== "00_resume_checkpoint",
+          });
+        } else {
+          await mkdir(checkpointDir, { recursive: true, mode: 0o700 });
+        }
+      }
       checkOpen();
       const feedback = await workbench(
         {
@@ -672,6 +694,13 @@ export class CodexSecurity {
       }
       checkOpen();
       let prompt = basePrompt;
+      if (options.resumeCheckpointDir !== undefined) {
+        prompt = [
+          basePrompt,
+          "",
+          "This scan resumes a prior interrupted checkpoint at the current repository revision. artifacts/00_resume_checkpoint contains the prior durable artifacts. Build a current inventory first. Re-review changed and new files, then reuse only receipts and candidate evidence still applicable to unchanged code. Do not treat checkpoint coverage as current coverage until it has been reconciled.",
+        ].join("\n");
+      }
       if (falsePositiveExamples.length > 0) {
         const feedbackPath = join(
           scanDir,
